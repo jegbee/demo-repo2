@@ -1,0 +1,114 @@
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      home: FirebaseAuth.instance.currentUser == null ? LoginScreen() : ChatScreen(),
+    );
+  }
+}
+
+class LoginScreen extends StatelessWidget {
+  final emailController = TextEditingController();
+  final passController = TextEditingController();
+
+  void login(BuildContext context) async {
+    try {
+      await FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: emailController.text,
+        password: passController.text,
+      );
+    } catch (e) {
+      await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailController.text,
+        password: passController.text,
+      );
+    }
+    Navigator.pushReplacement(
+        context, MaterialPageRoute(builder: (_) => ChatScreen()));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Login/Sign Up')),
+      body: Column(
+        children: [
+          TextField(controller: emailController, decoration: InputDecoration(hintText: "Email")),
+          TextField(controller: passController, decoration: InputDecoration(hintText: "Password"), obscureText: true),
+          ElevatedButton(onPressed: () => login(context), child: Text("Enter")),
+        ],
+      ),
+    );
+  }
+}
+
+class ChatScreen extends StatelessWidget {
+  final msgController = TextEditingController();
+  final firestore = FirebaseFirestore.instance;
+  final user = FirebaseAuth.instance.currentUser;
+
+  void sendMessage() {
+    if (msgController.text.trim().isNotEmpty) {
+      firestore.collection('chats').add({
+        'text': msgController.text,
+        'createdAt': Timestamp.now(),
+        'user': user!.email,
+      });
+      msgController.clear();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text("Chat")),
+      body: Column(
+        children: [
+          Expanded(
+            child: StreamBuilder(
+              stream: firestore
+                  .collection('chats')
+                  .orderBy('createdAt', descending: true)
+                  .snapshots(),
+              builder: (ctx, AsyncSnapshot<QuerySnapshot> chatSnapshot) {
+                if (chatSnapshot.connectionState == ConnectionState.waiting)
+                  return Center(child: CircularProgressIndicator());
+                final chatDocs = chatSnapshot.data!.docs;
+                return ListView.builder(
+                  reverse: true,
+                  itemCount: chatDocs.length,
+                  itemBuilder: (ctx, index) => ListTile(
+                    title: Text(chatDocs[index]['text']),
+                    subtitle: Text(chatDocs[index]['user']),
+                  ),
+                );
+              },
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: msgController,
+                  decoration: InputDecoration(labelText: "Send a message..."),
+                ),
+              ),
+              IconButton(onPressed: sendMessage, icon: Icon(Icons.send))
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
